@@ -36,6 +36,8 @@ export type MenuContentProps = Omit<
   alignOffset?: number;
   /** Places the popup at an element or a point instead of the trigger. */
   anchor?: PositionerProps["anchor"];
+  /** Where the portal mounts, when `document.body` is outside a focus trap. */
+  container?: React.ComponentProps<typeof BaseMenu.Portal>["container"];
   /** Keep this many pixels of clearance from the viewport edges. */
   collisionPadding?: number;
   /** Plain class names added after the StyleX ones, e.g. React Flow's "nodrag nopan". */
@@ -53,6 +55,7 @@ export function MenuContent({
   sideOffset = 6,
   alignOffset = 0,
   anchor,
+  container,
   collisionPadding = 8,
   className,
   xstyle,
@@ -62,7 +65,7 @@ export function MenuContent({
 }: MenuContentProps) {
   const styled = stylex.props(overlay.popup, menu.panel, xstyle);
   return (
-    <BaseMenu.Portal>
+    <BaseMenu.Portal container={container}>
       <BaseMenu.Positioner
         side={side}
         align={align}
@@ -180,6 +183,8 @@ export type MenuRadioItemProps = Omit<
   React.ComponentPropsWithoutRef<typeof BaseMenu.RadioItem>,
   "className" | "style"
 > & {
+  /** A leading icon. The check then moves to the end of the row. */
+  icon?: React.ReactNode;
   /** A second, quiet line under the label, e.g. when the conversation was updated. */
   detail?: React.ReactNode;
   className?: string;
@@ -189,10 +194,17 @@ export type MenuRadioItemProps = Omit<
 /** One choice in a MenuRadioGroup, with a check on the chosen one. */
 export const MenuRadioItem = React.forwardRef<HTMLElement, MenuRadioItemProps>(
   function MenuRadioItem(
-    { detail, className, xstyle, children, ...props },
+    { icon, detail, className, xstyle, children, ...props },
     ref,
   ) {
     const styled = stylex.props(menu.item, xstyle);
+    const check = (
+      <span aria-hidden="true" {...stylex.props(menu.icon)}>
+        <BaseMenu.RadioItemIndicator>
+          <Check size={13} />
+        </BaseMenu.RadioItemIndicator>
+      </span>
+    );
     return (
       <BaseMenu.RadioItem
         ref={ref}
@@ -200,11 +212,13 @@ export const MenuRadioItem = React.forwardRef<HTMLElement, MenuRadioItemProps>(
         className={joinClassNames(styled.className, className)}
         style={styled.style}
       >
-        <span aria-hidden="true" {...stylex.props(menu.icon)}>
-          <BaseMenu.RadioItemIndicator>
-            <Check size={13} />
-          </BaseMenu.RadioItemIndicator>
-        </span>
+        {icon == null ? (
+          check
+        ) : (
+          <span aria-hidden="true" {...stylex.props(menu.icon)}>
+            {icon}
+          </span>
+        )}
         {detail != null ? (
           <span {...stylex.props(menu.label, menu.stack)}>
             <span {...stylex.props(menu.line)}>{children}</span>
@@ -213,6 +227,7 @@ export const MenuRadioItem = React.forwardRef<HTMLElement, MenuRadioItemProps>(
         ) : (
           <span {...stylex.props(menu.label)}>{children}</span>
         )}
+        {icon == null ? null : check}
       </BaseMenu.RadioItem>
     );
   },
@@ -301,6 +316,8 @@ const menu = stylex.create({
   },
   panel: {
     display: "grid",
+    // An implicit column grows to the longest label and pushes rows past the edge.
+    gridTemplateColumns: "minmax(0, 1fr)",
     gap: "1px",
     minWidth: "200px",
     maxWidth: "min(300px, calc(100vw - 16px))",

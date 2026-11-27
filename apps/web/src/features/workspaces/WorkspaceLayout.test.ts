@@ -350,29 +350,29 @@ describe("workspace rail route lifecycle", () => {
       workspace([]),
       atlas,
     ]);
-    const selector = container.querySelector<HTMLSelectElement>(
-      'select[aria-label="Switch workspace"]',
-    )!;
+    const chooseAtlas = async () => {
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>(
+            'button[aria-label="Switch workspace"]',
+          )!
+          .click();
+      });
+      const row = [
+        ...document.body.querySelectorAll<HTMLElement>(
+          '[role="menuitemradio"]',
+        ),
+      ].find((item) => item.textContent === "Atlas");
+      await act(async () => row!.click());
+    };
 
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(
-        HTMLSelectElement.prototype,
-        "value",
-      )?.set?.call(selector, "atlas");
-      selector.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseAtlas();
     expect(testState.push).toHaveBeenCalledWith("/workspaces/atlas/settings");
 
     testState.push.mockReset();
     testState.pathname = "/workspaces/operations/projects/graph-a";
     await rerender();
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(
-        HTMLSelectElement.prototype,
-        "value",
-      )?.set?.call(selector, "atlas");
-      selector.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseAtlas();
     expect(testState.push).toHaveBeenCalledWith("/workspaces/atlas/projects");
   });
 

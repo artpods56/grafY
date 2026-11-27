@@ -490,47 +490,82 @@ export const railStyles = stylex.create({
     maxWidth: "none",
   },
 
-  workspaceSelect: {
-    position: "relative",
-    display: "block",
+  workspaceTrigger: {
+    width: "100%",
     minWidth: 0,
-    padding: 0,
-    borderWidth: 0,
-    borderStyle: "none",
-    backgroundColor: "transparent",
-    color: tokens.colorRailMuted,
-    ":hover": {
-      color: tokens.colorRailTextEmphasis,
-    },
-    ":focus-within": {
-      color: tokens.colorRailTextEmphasis,
-    },
-  },
-  selectIcon: {
-    position: "absolute",
-    top: "50%",
+    height: { default: "34px", "@media (max-width: 620px)": "44px" },
+    flexShrink: 0,
     display: "flex",
     alignItems: "center",
-    justifyContent: "center",
-    pointerEvents: "none",
-    left: "var(--grafy-rail-icon-center)",
-    transform: "translate(-50%, -50%)",
-    transition: "color 140ms ease",
+    gap: "10px",
+    // The 1px border comes out of the padding, so the icon lines up with the rows.
+    paddingInlineStart: "calc(var(--grafy-rail-item-pad) - 1px)",
+    paddingInlineEnd: "7px",
+    overflow: "hidden",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: {
+      default: tokens.colorRailBorder,
+      ":hover": "rgba(255, 255, 255, 0.18)",
+      ":focus-visible": "rgba(255, 255, 255, 0.3)",
+      ":is([data-popup-open])": "rgba(255, 255, 255, 0.3)",
+      "@media (min-width: 621px) and (max-width: 860px)": "transparent",
+    },
+    borderRadius: tokens.radiusMd,
+    outline: {
+      default: "none",
+      ":focus-visible": "2px solid rgba(255, 255, 255, 0.35)",
+    },
+    outlineOffset: "-2px",
+    backgroundColor: {
+      default: tokens.colorRailSurface,
+      ":hover": tokens.colorRailHover,
+      ":is([data-popup-open])": tokens.colorRailActive,
+      "@media (min-width: 621px) and (max-width: 860px)": {
+        default: "transparent",
+        ":hover": tokens.colorRailHover,
+        ":focus-visible": tokens.colorRailHover,
+        ":is([data-popup-open])": tokens.colorRailActive,
+      },
+    },
+    color: {
+      default: tokens.colorRailMuted,
+      ":hover": tokens.colorRailTextEmphasis,
+      ":focus-visible": tokens.colorRailTextEmphasis,
+      ":is([data-popup-open])": tokens.colorRailTextEmphasis,
+    },
+    cursor: "pointer",
+    fontSize: tokens.fontSizeMd,
+    fontWeight: 500,
+    textAlign: "left",
+    transitionProperty: "background-color, border-color, color",
+    transitionDuration: {
+      default: "140ms",
+      "@media (prefers-reduced-motion: reduce)": "0s",
+    },
+    transitionTimingFunction: "ease",
   },
-  selectIconSvg: {
-    width: "var(--grafy-rail-icon)",
-    height: "var(--grafy-rail-icon)",
-    maxWidth: "none",
+  /** Collapsed rail (React state). The phone drawer keeps the full control. */
+  workspaceTriggerCollapsed: {
+    borderColor: {
+      default: "transparent",
+      "@media (max-width: 620px)": tokens.colorRailBorder,
+    },
+    backgroundColor: {
+      default: "transparent",
+      ":hover": tokens.colorRailHover,
+      ":focus-visible": tokens.colorRailHover,
+      ":is([data-popup-open])": tokens.colorRailActive,
+      "@media (max-width: 620px)": tokens.colorRailSurface,
+    },
   },
-  selectChevron: {
-    position: "absolute",
-    top: "50%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    pointerEvents: "none",
-    right: "8px",
-    transform: "translateY(-50%)",
+  workspaceName: {
+    flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    color: tokens.colorRailTextEmphasis,
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
     opacity: "var(--grafy-rail-copy)",
     transition: "opacity 140ms ease var(--grafy-rail-copy-delay)",
     "@media (prefers-reduced-motion: reduce)": {
@@ -540,96 +575,20 @@ export const railStyles = stylex.create({
       opacity: "1",
     },
   },
-  selectChevronSvg: {
-    width: "12px",
-    height: "12px",
-    maxWidth: "none",
-  },
-
-  workspaceSelectControl: {
-    appearance: "none",
-    width: "100%",
-    height: "34px",
-    paddingBlock: 0,
-    paddingInlineStart:
-      "calc(var(--grafy-rail-icon-center) + var(--grafy-rail-icon) / 2 + 10px)",
-    paddingInlineEnd: "28px",
-    overflow: "hidden",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorRailBorder,
-    borderRadius: tokens.radiusMd,
-    outline: {
-      default: "none",
-      ":focus-visible": "2px solid rgba(255, 255, 255, 0.35)",
-    },
-    outlineOffset: "-2px",
-    backgroundColor: tokens.colorRailSurface,
-    color: tokens.colorRailTextEmphasis,
-    colorScheme: "dark",
-    fontFamily: "inherit",
-    fontSize: tokens.fontSizeMd,
-    fontWeight: 500,
-    textAlign: "left",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    cursor: "pointer",
-    transitionProperty: "background-color, border-color, color",
-    transitionDuration: {
-      default: "140ms",
-      "@media (prefers-reduced-motion: reduce)": "0s",
-    },
-    transitionTimingFunction: "ease",
-    ":hover:not(:disabled)": {
-      borderColor: "rgba(255, 255, 255, 0.18)",
-      backgroundColor: tokens.colorRailHover,
-    },
-    ":focus": {
-      borderColor: "rgba(255, 255, 255, 0.3)",
-      backgroundColor: tokens.colorRailSurface,
-    },
-    ":focus-visible": {
-      borderColor: "rgba(255, 255, 255, 0.3)",
-      backgroundColor: tokens.colorRailSurface,
-    },
-    "@media (min-width: 621px) and (max-width: 860px)": {
-      color: "transparent",
-      borderColor: "transparent",
-      backgroundColor: "transparent",
-      paddingInlineEnd: "var(--grafy-rail-item-pad)",
-      ":hover:not(:disabled)": {
-        backgroundColor: tokens.colorRailHover,
-      },
-      ":focus": {
-        backgroundColor: tokens.colorRailHover,
-      },
-      ":focus-visible": {
-        backgroundColor: tokens.colorRailHover,
-      },
+  workspaceChevron: {
+    flexShrink: 0,
+    opacity: "var(--grafy-rail-copy)",
+    transition: "opacity 140ms ease var(--grafy-rail-copy-delay)",
+    "@media (prefers-reduced-motion: reduce)": {
+      transition: "none",
     },
     "@media (max-width: 620px)": {
-      minHeight: "44px",
-      color: tokens.colorRailTextEmphasis,
-      borderColor: tokens.colorRailBorder,
-      backgroundColor: tokens.colorRailSurface,
-      paddingInlineEnd: "32px",
+      opacity: "1",
     },
   },
-  /** Collapsed rail (React state) at any width above 620px. */
-  workspaceSelectCollapsed: {
-    color: "transparent",
-    borderColor: "transparent",
-    backgroundColor: "transparent",
-    paddingInlineEnd: "var(--grafy-rail-item-pad)",
-    ":hover:not(:disabled)": {
-      backgroundColor: tokens.colorRailHover,
-    },
-    ":focus": {
-      backgroundColor: tokens.colorRailHover,
-    },
-    ":focus-visible": {
-      backgroundColor: tokens.colorRailHover,
-    },
+  /** At least as wide as the switcher; long names widen it up to the kit's cap. */
+  workspaceMenu: {
+    minWidth: "max(var(--anchor-width), 190px)",
   },
 
   badge: {

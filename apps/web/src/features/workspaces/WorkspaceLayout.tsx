@@ -12,7 +12,7 @@ import {
   LoaderCircle,
   LogOut,
   Mail,
-  Menu,
+  Menu as MenuIcon,
   MessageSquarePlus,
   Monitor,
   Moon,
@@ -35,7 +35,13 @@ import { type ThemePreference, useTheme } from "@/components/theme";
 import { ThresholdStatus } from "@/components/threshold-status";
 import { Button, IconButton } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { Select } from "@/components/ui/select";
+import {
+  Menu,
+  MenuContent,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
+} from "@/components/ui/menu";
 import { phoneTouch } from "@/components/ui/touch-target";
 import { Notice, type NoticeTone } from "@/components/ui/notice";
 import {
@@ -319,11 +325,15 @@ export function WorkspaceRail({
   const { cycleTheme, preference, setPreference } = useTheme();
   const [collapsed, setCollapsed] = useRailCollapsed();
   const thisProjectHeadingId = React.useId();
+  const workspaceNameId = React.useId();
   const mobileViewport = useMediaQuery(RAIL_MOBILE_QUERY);
   const [accountMenuPath, setAccountMenuPath] = React.useState<string | null>(
     null,
   );
   const [mobileNavigationPath, setMobileNavigationPath] = React.useState<
+    string | null
+  >(null);
+  const [workspaceMenuPath, setWorkspaceMenuPath] = React.useState<
     string | null
   >(null);
   const [graphActionBusyId, setGraphActionBusyId] = React.useState<
@@ -356,10 +366,12 @@ export function WorkspaceRail({
   } | null>(null);
 
   const accountMenuOpen = accountMenuPath === pathname;
+  const workspaceMenuOpen = workspaceMenuPath === pathname;
   const mobileOpen = mobileNavigationPath === pathname;
 
   const clearOverlayState = React.useCallback(() => {
     setAccountMenuPath(null);
+    setWorkspaceMenuPath(null);
     setMobileNavigationPath(null);
   }, []);
 
@@ -404,9 +416,8 @@ export function WorkspaceRail({
     }
   };
 
-  const onChangeWorkspace = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const slug = event.currentTarget.value;
-    if (!slug) return;
+  const onChangeWorkspace = (slug: string) => {
+    if (slug === selectedWorkspace?.slug) return;
     closeMobileNavigation(true);
     const suffix = /^\/workspaces\/[^/]+\/settings\/?$/.test(pathname)
       ? "/settings"
@@ -527,6 +538,7 @@ export function WorkspaceRail({
     );
     setMobileNavigationPath(null);
     setAccountMenuPath(null);
+    setWorkspaceMenuPath(null);
     if (!focusWasInsideRail) return;
 
     window.requestAnimationFrame(() => {
@@ -728,7 +740,7 @@ export function WorkspaceRail({
           {mobileOpen ? (
             <X size={20} aria-hidden="true" />
           ) : (
-            <Menu size={20} aria-hidden="true" />
+            <MenuIcon size={20} aria-hidden="true" />
           )}
         </IconButton>
         <button
@@ -856,49 +868,77 @@ export function WorkspaceRail({
           >
             Workspace
           </p>
-          <label className={stylex.props(railStyles.workspaceSelect).className}>
-            <span
-              className={stylex.props(railStyles.selectIcon).className}
-              aria-hidden="true"
+          <Menu
+            open={workspaceMenuOpen}
+            onOpenChange={(open) => {
+              setWorkspaceMenuPath(open ? pathname : null);
+            }}
+          >
+            <MenuTrigger
+              className={
+                stylex.props(
+                  railStyles.workspaceTrigger,
+                  visuallyCollapsed && railStyles.workspaceTriggerCollapsed,
+                ).className
+              }
+              title={workspaceSelectorLabel(selectedWorkspace)}
+              aria-label="Switch workspace"
+              aria-describedby={workspaceNameId}
             >
               {selectedWorkspace?.kind === "personal" ? (
                 <Workflow
                   size={15}
-                  className={stylex.props(railStyles.selectIconSvg).className}
+                  aria-hidden="true"
+                  className={railIconClass}
                 />
               ) : (
-                <Users
-                  size={15}
-                  className={stylex.props(railStyles.selectIconSvg).className}
-                />
+                <Users size={15} aria-hidden="true" className={railIconClass} />
               )}
-            </span>
-            <Select
-              value={selectedWorkspace?.slug ?? ""}
-              aria-label="Switch workspace"
-              title={workspaceSelectorLabel(selectedWorkspace)}
-              onChange={onChangeWorkspace}
-              xstyle={[
-                railStyles.workspaceSelectControl,
-                visuallyCollapsed && railStyles.workspaceSelectCollapsed,
-              ]}
-            >
-              {workspaces.map((workspace) => (
-                <option key={workspace.id} value={workspace.slug}>
-                  {workspaceSelectorLabel(workspace)}
-                </option>
-              ))}
-            </Select>
-            <span
-              className={stylex.props(railStyles.selectChevron).className}
-              aria-hidden="true"
-            >
+              <span
+                id={workspaceNameId}
+                className={
+                  stylex.props(
+                    railStyles.workspaceName,
+                    visuallyCollapsed && railStyles.copyHidden,
+                  ).className
+                }
+              >
+                {workspaceSelectorLabel(selectedWorkspace)}
+              </span>
               <ChevronsUpDown
                 size={12}
-                className={stylex.props(railStyles.selectChevronSvg).className}
+                aria-hidden="true"
+                className={stylex.props(railStyles.workspaceChevron).className}
               />
-            </span>
-          </label>
+            </MenuTrigger>
+            <MenuContent
+              side={visuallyCollapsed && !mobileViewport ? "right" : "bottom"}
+              container={mobileViewport ? mobileRailRef : undefined}
+              xstyle={railStyles.workspaceMenu}
+            >
+              <MenuRadioGroup
+                value={selectedWorkspace?.slug ?? ""}
+                onValueChange={onChangeWorkspace}
+              >
+                {workspaces.map((workspace) => (
+                  <MenuRadioItem
+                    key={workspace.id}
+                    value={workspace.slug}
+                    icon={
+                      workspace.kind === "personal" ? (
+                        <Workflow size={14} />
+                      ) : (
+                        <Users size={14} />
+                      )
+                    }
+                    closeOnClick
+                  >
+                    {workspaceSelectorLabel(workspace)}
+                  </MenuRadioItem>
+                ))}
+              </MenuRadioGroup>
+            </MenuContent>
+          </Menu>
           <button
             type="button"
             className={stylex.props(railStyles.railItem).className}
